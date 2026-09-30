@@ -1,4 +1,4 @@
-name: Deploy CardioLens site
+name: Train CardioLens and deploy site
 
 on:
   push:
@@ -16,16 +16,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup GitHub Pages
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download public MIT-BIH data
+        run: python scripts/download_data.py
+
+      - name: Prepare record-level datasets
+        run: python scripts/prepare_data.py
+
+      - name: Train classical baseline
+        run: python scripts/train_baseline.py
+
+      - name: Train 1D CNN
+        run: python scripts/train_cnn.py
+
+      - name: Evaluate held-out test set
+        run: python scripts/evaluate.py
+
+      - name: Export real model outputs to dashboard
+        run: python scripts/export_web_results.py
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
@@ -33,6 +62,13 @@ jobs:
         with:
           path: ./docs
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
