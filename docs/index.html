@@ -28,7 +28,7 @@
 <div class="step"><div class="num">04 · EVALUATION</div><h3>Held-out testing</h3><p>Record-level separation helps prevent patient/record leakage.</p></div>
 <div class="step"><div class="num">05 · EVIDENCE</div><h3>Attribution</h3><p>Gradient-based temporal attribution highlights signal regions used by the model.</p></div>
 </div></section>
-<section class="section demo" id="demo"><div class="section-head"><div><h2>Live trained evaluation</h2><p>The dashboard below is populated from a real CNN evaluation run on a held-out MIT-BIH test split.</p></div><div><button class="primary" id="loadResults">Load latest model output</button></div></div>
+<section class="section demo" id="demo"><div class="section-head"><div><h2>Live trained evaluation</h2><p>The dashboard below is populated from a real CNN evaluation run on a held-out MIT-BIH test split.</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="sampleSelect" style="padding:12px 14px;border-radius:11px;border:1px solid #dfe7f2;font-weight:700"><option>Loading ECG samples…</option></select><button class="primary" id="loadResults">Load model output</button></div></div>
 <div class="dashboard"><aside class="side"><div class="logo">♡ CardioLens</div><div class="active">⌂ Overview</div><div>⌁ ECG Analyzer</div><div>◫ Dataset Explorer</div><div>◒ Model Performance</div><div>◎ Methodology</div></aside>
 <main class="main"><div id="status" class="notice">Loading trained evaluation…</div><h3>ECG Analyzer</h3>
 <div class="cards">
@@ -50,39 +50,54 @@
 <footer class="footer"><span>CardioLens · Varsha Singarapu & Vishnupriya Singarapu</span><a href="https://github.com/varshasingarapu123/CardioLens" target="_blank">Source code on GitHub ↗</a></footer>
 <script>
 const $=id=>document.getElementById(id);
+let latest=null;
+
 function pathFor(values,width=700,height=220,pad=18){
   const min=Math.min(...values),max=Math.max(...values),range=(max-min)||1;
   return values.map((v,i)=>`${i?'L':'M'} ${(i*(width-2*pad)/(values.length-1)+pad).toFixed(2)} ${(height-pad-(v-min)/range*(height-2*pad)).toFixed(2)}`).join(' ');
 }
-function regionScore(attr,a,b){return Math.max(...attr.slice(a,b));}
+function renderSample(i){
+  if(!latest || !latest.samples || !latest.samples[i]) return;
+  const d=latest.samples[i];
+  $('truth').textContent=d.true_class;
+  $('prediction').textContent=d.predicted_class;
+  $('confidence').textContent=(d.confidence*100).toFixed(1)+'%';
+  $('wavePath').setAttribute('d',pathFor(d.waveform));
+  const n=d.attribution.length;
+  const ranges=[[0,Math.floor(n/3)],[Math.floor(n/3),Math.floor(2*n/3)],[Math.floor(2*n/3),n]];
+  const scores=ranges.map(([a,b])=>Math.max(...d.attribution.slice(a,b)));
+  const mx=Math.max(...scores)||1;
+  $('barA').style.width=(scores[0]/mx*100).toFixed(0)+'%';
+  $('barB').style.width=(scores[1]/mx*100).toFixed(0)+'%';
+  $('barC').style.width=(scores[2]/mx*100).toFixed(0)+'%';
+  const ranked=d.attribution.map((v,j)=>[v,j]).sort((a,b)=>b[0]-a[0]);
+  const top=ranked.slice(0,Math.max(3,Math.floor(n*.04))).map(x=>x[1]);
+  const lo=Math.max(0,Math.min(...top)-12),hi=Math.min(n-1,Math.max(...top)+12);
+  $('attrPath').setAttribute('d',pathFor(d.waveform.slice(lo,hi+1)));
+  $('attrPath').setAttribute('transform',`translate(${lo*700/(n-1)},0)`);
+  $('status').textContent=`Real CNN output loaded · held-out test beat #${d.index}`;
+  $('status').style.background='#eafaf6';$('status').style.color='#176b5f';
+}
 async function loadResults(){
   const status=$('status');
   try{
     status.textContent='Loading the latest trained evaluation…';
     const r=await fetch('data/results.json?ts='+Date.now(),{cache:'no-store'});
     if(!r.ok) throw new Error('Trained results are not deployed yet.');
-    const d=await r.json();
-    $('dataset').textContent=d.dataset.replace(' Database','');
-    $('accuracy').textContent=(d.accuracy*100).toFixed(1)+'%';
-    $('f1').textContent=d.macro_f1.toFixed(3);
-    $('truth').textContent=d.sample_true_class;
-    $('prediction').textContent=d.sample_predicted_class;
-    $('confidence').textContent=(d.sample_confidence*100).toFixed(1)+'%';
-    $('wavePath').setAttribute('d',pathFor(d.sample_waveform));
-    const n=d.sample_attribution.length, ranked=d.sample_attribution.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]);
-    const centers=[...new Set(ranked.slice(0,Math.max(3,Math.floor(n*.04))).map(x=>Math.floor(x[1]/n*3)))];
-    const ranges=[[0,Math.floor(n/3)],[Math.floor(n/3),Math.floor(2*n/3)],[Math.floor(2*n/3),n]];
-    const scores=ranges.map(x=>regionScore(d.sample_attribution,x[0],x[1]));
-    const mx=Math.max(...scores)||1;
-    $('barA').style.width=(scores[0]/mx*100).toFixed(0)+'%';
-    $('barB').style.width=(scores[1]/mx*100).toFixed(0)+'%';
-    $('barC').style.width=(scores[2]/mx*100).toFixed(0)+'%';
-    const top=ranked.slice(0,Math.max(3,Math.floor(n*.04))).map(x=>x[1]);
-    const lo=Math.max(0,Math.min(...top)-12),hi=Math.min(n-1,Math.max(...top)+12);
-    $('attrPath').setAttribute('d',pathFor(d.sample_waveform.slice(lo,hi+1)));
-    $('attrPath').setAttribute('transform',`translate(${lo*700/(n-1)},0)`);
-    status.textContent='Trained CNN output loaded from the held-out test evaluation.';
-    status.style.background='#eafaf6';status.style.color='#176b5f';
+    latest=await r.json();
+    $('dataset').textContent=latest.dataset.replace(' Database','');
+    $('accuracy').textContent=(latest.accuracy*100).toFixed(1)+'%';
+    $('f1').textContent=latest.macro_f1.toFixed(3);
+    const select=$('sampleSelect');
+    select.innerHTML='';
+    latest.samples.forEach((d,i)=>{
+      const o=document.createElement('option');
+      o.value=i;
+      o.textContent=`Held-out ECG ${i+1} · True ${d.true_class}`;
+      select.appendChild(o);
+    });
+    select.addEventListener('change',()=>renderSample(Number(select.value)));
+    renderSample(0);
   }catch(e){
     status.textContent=e.message+' The GitHub Actions training workflow must finish successfully before real results appear.';
   }
