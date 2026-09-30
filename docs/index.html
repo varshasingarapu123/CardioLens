@@ -28,12 +28,65 @@
 <div class="step"><div class="num">04 · EVALUATION</div><h3>Held-out testing</h3><p>Record-level separation helps prevent patient/record leakage.</p></div>
 <div class="step"><div class="num">05 · EVIDENCE</div><h3>Attribution</h3><p>Gradient-based temporal attribution highlights signal regions used by the model.</p></div>
 </div></section>
-<section class="section demo" id="demo"><div class="section-head"><div><h2>CardioLens prototype dashboard</h2><p>A research dashboard view for inspecting ECG signals and model evidence.</p></div></div>
+<section class="section demo" id="demo"><div class="section-head"><div><h2>Live trained evaluation</h2><p>The dashboard below is populated from a real CNN evaluation run on a held-out MIT-BIH test split.</p></div><div><button class="primary" id="loadResults">Load latest model output</button></div></div>
 <div class="dashboard"><aside class="side"><div class="logo">♡ CardioLens</div><div class="active">⌂ Overview</div><div>⌁ ECG Analyzer</div><div>◫ Dataset Explorer</div><div>◒ Model Performance</div><div>◎ Methodology</div></aside>
-<main class="main"><h3>ECG Analyzer</h3><div class="cards"><div class="mini"><small>Dataset</small><strong>MIT-BIH</strong></div><div class="mini"><small>Pipeline</small><strong>Reproducible</strong></div><div class="mini"><small>Evidence</small><strong>Signal-level</strong></div></div>
-<div class="analysis"><div class="chart"><h4>ECG waveform</h4><svg viewBox="0 0 700 220" preserveAspectRatio="none"><path class="highlight" d="M275 110 L310 110 L320 70 L330 158 L340 105 L360 110 M505 110 L540 110 L550 70 L560 158 L570 105 L590 110"/><path d="M0 110 L35 110 L45 108 L55 110 L65 109 L75 111 L85 110 L95 109 L105 110 L115 110 L125 108 L135 110 L145 109 L155 110 L165 110 L175 109 L185 110 L195 109 L205 110 L215 110 L225 109 L235 110 L245 110 L255 109 L265 110 L275 110 L285 108 L295 110 L305 109 L315 68 L322 158 L330 102 L340 110 L355 110 L370 109 L385 110 L400 110 L415 109 L430 110 L445 109 L460 110 L475 110 L490 109 L505 110 L515 108 L525 110 L535 68 L542 158 L550 102 L560 110 L575 110 L590 109 L605 110 L620 109 L635 110 L650 110 L665 109 L680 110 L700 110"/></svg><div class="notice">ECG analysis view · model outputs appear here after a trained evaluation run.</div></div>
-<div class="explain"><h4>Model attribution</h4><p style="font-size:13px;color:#61708a">Temporal regions can be highlighted to inspect which portions of a waveform influence a prediction.</p><b>Signal region A</b><div class="bar"><i style="width:78%"></i></div><b>Signal region B</b><div class="bar"><i style="width:56%"></i></div><b>Signal region C</b><div class="bar"><i style="width:38%"></i></div><div class="notice">Model attribution · highlights signal regions associated with the model prediction.</div></div></div></main></div></section>
+<main class="main"><div id="status" class="notice">Loading trained evaluation…</div><h3>ECG Analyzer</h3>
+<div class="cards">
+<div class="mini"><small>Dataset</small><strong id="dataset">—</strong></div>
+<div class="mini"><small>Test accuracy</small><strong id="accuracy">—</strong></div>
+<div class="mini"><small>Macro F1</small><strong id="f1">—</strong></div>
+</div>
+<div class="cards">
+<div class="mini"><small>True class</small><strong id="truth">—</strong></div>
+<div class="mini"><small>Predicted class</small><strong id="prediction">—</strong></div>
+<div class="mini"><small>Model confidence</small><strong id="confidence">—</strong></div>
+</div>
+<div class="analysis"><div class="chart"><h4>Held-out ECG beat</h4><svg id="waveSvg" viewBox="0 0 700 220" preserveAspectRatio="none"><path id="attrPath" class="highlight"></path><path id="wavePath"></path></svg><div class="notice">This waveform is generated from the held-out test sample used by the trained model. It is a research output, not a clinical diagnosis.</div></div>
+<div class="explain"><h4>Model attribution</h4><p style="font-size:13px;color:#61708a">Gradient attribution from the trained CNN is shown as signal-level evidence for the displayed prediction.</p>
+<div><b>Highest-attribution regions</b><div class="bar"><i id="barA" style="width:0%"></i></div><div class="bar"><i id="barB" style="width:0%"></i></div><div class="bar"><i id="barC" style="width:0%"></i></div></div>
+<div class="notice">Attribution shows which input regions influenced the model output. It is not a clinical explanation.</div></div></div></main></div></section>
 <section class="section" id="method"><h2>Research design</h2><p>CardioLens emphasizes reproducibility and honest reporting: no hard-coded accuracy claims, no synthetic clinical outcomes, and no real-patient deployment.</p><div class="tech"><span>Python</span><span>PyTorch</span><span>WFDB</span><span>NumPy</span><span>SciPy</span><span>scikit-learn</span><span>FastAPI</span><span>1D CNN</span><span>Gradient attribution</span></div></section>
 <section class="section"><div class="panel"><h2>Medical safety & limitations</h2><p>This is a research and educational prototype, not a medical device and not intended for diagnosis or clinical decision-making. MIT-BIH is a historical public dataset and does not represent every patient, device, or clinical environment. Dataset performance must not be interpreted as clinical performance.</p></div></section>
 <footer class="footer"><span>CardioLens · Varsha Singarapu & Vishnupriya Singarapu</span><a href="https://github.com/varshasingarapu123/CardioLens" target="_blank">Source code on GitHub ↗</a></footer>
-</body></html>
+<script>
+const $=id=>document.getElementById(id);
+function pathFor(values,width=700,height=220,pad=18){
+  const min=Math.min(...values),max=Math.max(...values),range=(max-min)||1;
+  return values.map((v,i)=>`${i?'L':'M'} ${(i*(width-2*pad)/(values.length-1)+pad).toFixed(2)} ${(height-pad-(v-min)/range*(height-2*pad)).toFixed(2)}`).join(' ');
+}
+function regionScore(attr,a,b){return Math.max(...attr.slice(a,b));}
+async function loadResults(){
+  const status=$('status');
+  try{
+    status.textContent='Loading the latest trained evaluation…';
+    const r=await fetch('data/results.json?ts='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw new Error('Trained results are not deployed yet.');
+    const d=await r.json();
+    $('dataset').textContent=d.dataset.replace(' Database','');
+    $('accuracy').textContent=(d.accuracy*100).toFixed(1)+'%';
+    $('f1').textContent=d.macro_f1.toFixed(3);
+    $('truth').textContent=d.sample_true_class;
+    $('prediction').textContent=d.sample_predicted_class;
+    $('confidence').textContent=(d.sample_confidence*100).toFixed(1)+'%';
+    $('wavePath').setAttribute('d',pathFor(d.sample_waveform));
+    const n=d.sample_attribution.length, ranked=d.sample_attribution.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]);
+    const centers=[...new Set(ranked.slice(0,Math.max(3,Math.floor(n*.04))).map(x=>Math.floor(x[1]/n*3)))];
+    const ranges=[[0,Math.floor(n/3)],[Math.floor(n/3),Math.floor(2*n/3)],[Math.floor(2*n/3),n]];
+    const scores=ranges.map(x=>regionScore(d.sample_attribution,x[0],x[1]));
+    const mx=Math.max(...scores)||1;
+    $('barA').style.width=(scores[0]/mx*100).toFixed(0)+'%';
+    $('barB').style.width=(scores[1]/mx*100).toFixed(0)+'%';
+    $('barC').style.width=(scores[2]/mx*100).toFixed(0)+'%';
+    const top=ranked.slice(0,Math.max(3,Math.floor(n*.04))).map(x=>x[1]);
+    const lo=Math.max(0,Math.min(...top)-12),hi=Math.min(n-1,Math.max(...top)+12);
+    $('attrPath').setAttribute('d',pathFor(d.sample_waveform.slice(lo,hi+1)));
+    $('attrPath').setAttribute('transform',`translate(${lo*700/(n-1)},0)`);
+    status.textContent='Trained CNN output loaded from the held-out test evaluation.';
+    status.style.background='#eafaf6';status.style.color='#176b5f';
+  }catch(e){
+    status.textContent=e.message+' The GitHub Actions training workflow must finish successfully before real results appear.';
+  }
+}
+$('loadResults').addEventListener('click',loadResults);
+loadResults();
+</script></body></html>
